@@ -1,0 +1,103 @@
+{
+    "Identificacao": {
+		"Ambiente": 2,
+        "Serie": 1,
+        "Numero": 0,
+        "DHEmissao": "2026-07-03T12:20:33.00098-03:00",
+        "Emissao": 1,
+        "SiteAutorizador": 0,
+        "Finalidade": 0,
+        "Faturamento": 0,
+        "CessaoMeiosRede": 0
+    },
+    "Destinatario": {
+    "Nome": "Flux Tecnologia",
+    "Doc": "30288995000107",
+    "DocOutro": "",
+    "IndIEDest": 1,
+	"ie":"0860515850",
+    "IM": "",
+    "Endereco": {
+      "Logradouro": "Rua Joaquim Pedro Soares",
+      "Numero": "560",
+      "Complemento": "",
+      "Bairro": "Centro",
+      "CodMunicipio": "4313409",
+      "NomeMunicipio": "Novo Hamburgo",
+      "CEP": " 13010050",
+      "UF": "RS",
+      "CodPais": "1058",
+      "NomePais": "BRASIL",
+      "Fone": "19999999999"
+    }
+  },
+  "Assinante": {
+    "Codigo": "93340688257",
+    "Tipo": 1,
+    "Servico": 1,
+    "Contrato": "888887777",
+    "ContratoIni": "2025-03-27T00:00:00Z",
+    "TerminalPrincipal": {
+      "Numero": "19999999999",
+      "UF": "RS"
+    }
+  },
+    "Itens": [
+        {
+            "Produto": {
+                "Codigo": "999",
+                "Nome": "Serviço telefonia FLUX",
+                "Classificacao": 100101,
+                "CFOP": 5301,
+				"UnidadeMedida": 4,
+                "Quantidade": 1,
+                "ValorItem": 40,
+                "ValorDesconto": 0,
+                "IndDevolucao": 0
+            },
+            "Imposto": {
+        "IndSemCST": 0,
+        "ICMS": {
+          "CST": "00",
+          "Aliquota": 17,
+          "AliquotaFCP": 0, 
+          "AliquotaRed": 0,
+          "AliquotaUFDest": 0,
+          "ValorDeson": 0,
+          "CodBeneficio": ""
+        },
+                "PIS": {
+                    "CST": "01",
+                    "Aliquota": 0.65
+                },
+                "COFINS": {
+                    "CST": "01",
+                    "Aliquota": 3
+                }
+            }
+        }
+        ],
+		"Faturamento": {
+		"Fatura": {
+			"Competencia": "202607",
+			"Vencimento": "2026-06-10T00:00:00",
+			"PeriodoUso": {
+				"Inicio": "2026-06-10T00:00:00",
+				"Final": "2026-06-10T00:00:00"
+			},
+			"CodBarras": "1",
+			"DebitoAutomatico": "",
+			"Banco": null,
+			"EnderecoFat": null,
+			"Pix": null
+		},
+		"Central": null,
+		"Cofaturamento": null
+	},
+		"Autorizacoes": [
+        {
+            "Doc": "26746798000109"
+        }
+    ],
+    "Informacoes": "Contribuição para o FUST 1% e FUNTTEL 0,5% sobre os valores dos serviços de telecomunicações Não repassados ao cliente"
+}

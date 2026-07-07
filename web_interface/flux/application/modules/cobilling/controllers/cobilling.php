@@ -18,7 +18,8 @@ class cobilling extends MX_Controller {
         parent::__construct();
         $this->load->config('nfcom_config', FALSE, TRUE);
         $this->load->model('nfcom_model');
-        $this->load->library('flux/NFComMapper');
+        $this->load->library('flux/nfcom_mapper');
+        $this->load->library('flux/api_emissor62');
         $this->load->library('flux_log');
         // Tela web: exige sessao logada (diferente do token de API).
         if ($this->session->userdata('user_login') == FALSE) {
@@ -63,10 +64,11 @@ class cobilling extends MX_Controller {
         // 4) Le o conteudo e valida o XML (parse) + extrai a chave de cofaturamento.
         $xml = file_get_contents($_FILES['nfcom_xml']['tmp_name']);
         
-        $this->flux_log->write_log('upload_save', json_encode($xml));
+//        $this->flux_log->write_log('upload_save', json_encode($xml));
         try {
-            $chave = $this->NFComMapper->extrairChave($xml);
+            $chave = $this->nfcom_mapper->extrairChave($xml);
         } catch (Exception $e) {
+            $this->flux_log->write_log('error', json_encode($e->getMessage()));
             return $this->_falha(gettext('XML inválido: ') . $e->getMessage());
         }
 
@@ -95,7 +97,7 @@ class cobilling extends MX_Controller {
         if ($this->input->post('emitir_agora')) {
             $this->_emitir($id, $xml);
         } else {
-            $this->session->set_flashdata('flux_notification', sprintf(gettext('XML importado e vinculado à conta (registro #%d).'), $id));
+            $this->session->set_flashdata('flux_errormsg', sprintf(gettext('XML importado e vinculado à conta (registro #%d).'), $id));
         }
 
         redirect(base_url() . 'cobilling/upload');
@@ -105,20 +107,23 @@ class cobilling extends MX_Controller {
 
     /** Converte o XML e envia ao Emissor62, persistindo o resultado no registro $id. */
     private function _emitir($id, $xml) {
-        $this->load->library('flux/ApiEmissor62');
+        
         try {
-            $payload = $this->NFComMapper->convert($xml);
+            $payload = $this->nfcom_mapper->convert($xml);
             $this->nfcom_model->atualizar($id, array('payload_enviado' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
-            $r   = $this->apiemissor62->enviar($payload);
+            $this->flux_log->write_log('payload_enviado', json_encode($payload));
+            $r   = $this->api_emissor62->enviar($payload);
+            $this->flux_log->write_log('enviar', json_encode($r));
             $res = $this->nfcom_model->registrar_resposta($id, $r['response'], $r['http_code']);
             if ($res['ok']) {
-                $this->session->set_flashdata('flux_notification', sprintf(gettext('NFCom emitida com sucesso (registro #%d).'), $id));
+                $this->session->set_flashdata('flux_errormsg', sprintf(gettext('NFCom emitida com sucesso (registro #%d).'), $id));
             } else {
-                $this->session->set_flashdata('flux_errormsg', sprintf(gettext('Falha na emissão (registro #%d, HTTP %d). Reprocesse depois.'), $id, $r['http_code']));
+                $this->session->set_flashdata('flux_notification', sprintf(gettext('Falha na emissão (registro #%d, HTTP %d). Reprocesse depois.'), $id, $r['http_code']));
             }
         } catch (Exception $e) {
             $this->nfcom_model->atualizar($id, array('status' => 1, 'motivo' => substr($e->getMessage(), 0, 255)));
-            $this->session->set_flashdata('flux_errormsg', gettext('Erro de comunicação com o Emissor62: ') . $e->getMessage());
+            $this->flux_log->write_log('Erro', json_encode($e->getMessage()));
+            $this->session->set_flashdata('flux_notification', gettext('Erro de comunicação com o Emissor62: ') . $e->getMessage());
         }
     }
 
@@ -142,7 +147,7 @@ class cobilling extends MX_Controller {
 
     /** Grava mensagem de erro e volta para o formulario. */
     private function _falha($msg) {
-        $this->session->set_flashdata('flux_errormsg', $msg);
+        $this->session->set_flashdata('flux_notification', $msg);
         redirect(base_url() . 'cobilling/upload');
     }
 }

@@ -1,6 +1,35 @@
-<?php if (!defined('BASEPATH')) exit('No direct script access allowed');
-class NFComMapper{
+<?php
+// ##############################################################################
+// Flux Telecom - Unindo pessoas e negócios
+//
+// Copyright (C) 2025 Flux Telecom
+// Daniel Paixao <daniel@flux.net.br>
+// Flux SBC Version 4.2 and above
+// License https://www.gnu.org/licenses/agpl-3.0.html
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+// ##############################################################################
+if (! defined ( 'BASEPATH' ))
+	exit ( 'No direct script access allowed' );
+class nfcom_mapper {
 
+protected $CI;
+protected $cfg;
+public function __construct() {
+    $this->CI =& get_instance();
+    $this->CI->load->library('flux_log');
+}
  /** Namespace padrao da NFCom (portal fiscal). */
  const NS_NFCOM='http://www.portalfiscal.inf.br/nfcom';
 
@@ -48,6 +77,9 @@ class NFComMapper{
   * @return string  Chave resolvida, ou '' se nao encontrada.
   */
  public function extrairChave($xmlString,$chaveOverride=null){
+ 
+ $this->CI->flux_log->write_log('extrairChave', 'start');
+ 
   if($chaveOverride!==null && trim($chaveOverride)!=='') return trim($chaveOverride);
   $xml=$this->carregar($xmlString);
   $inf=$xml->xpath('//n:infNFCom');

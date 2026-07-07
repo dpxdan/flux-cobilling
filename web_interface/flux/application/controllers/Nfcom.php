@@ -19,9 +19,10 @@ class Nfcom extends CI_Controller{
  public function __construct(){
   parent::__construct();
   $this->load->config('nfcom',FALSE,TRUE); // fail_gracefully: nao quebra se ausente
-  $this->load->model('Nfcom_model','nfcom_model');
-  $this->load->library('flux/NFComMapper');
-  $this->load->library('flux/ApiEmissor62');
+  $this->load->model('nfcom_model');
+  $this->load->library("flux_log");
+  $this->load->library('flux/nfcom_mapper');
+  $this->load->library('flux/api_emissor62');
  }
 
  /**
@@ -36,7 +37,7 @@ class Nfcom extends CI_Controller{
   $chaveOverride=$this->chaveOverride();
 
   // Registro inicial (status 2 = pendente) garante rastreabilidade mesmo se algo falhar adiante.
-  try{ $chaveRef=$this->NFComMapper->extrairChave($xml,$chaveOverride); }
+  try{ $chaveRef=$this->nfcom_mapper->extrairChave($xml,$chaveOverride); }
   catch(Exception $e){ $chaveRef=($chaveOverride!==null?$chaveOverride:''); }
   $id=$this->nfcom_model->criar([
     'chave_cofaturamento'=>($chaveRef!==''?$chaveRef:null),
@@ -45,7 +46,7 @@ class Nfcom extends CI_Controller{
   ]);
 
   try{
-    $payload=$this->NFComMapper->convert($xml,$chaveOverride);
+    $payload=$this->nfcom_mapper->convert($xml,$chaveOverride);
   }catch(Exception $e){
     $this->nfcom_model->atualizar($id,['status'=>1,'motivo'=>$this->truncar($e->getMessage(),255)]);
     $this->responder(['status'=>false,'id'=>$id,'error'=>$e->getMessage()],422); return;
@@ -68,7 +69,7 @@ class Nfcom extends CI_Controller{
   $payload=(!empty($registro['payload_enviado']))?json_decode($registro['payload_enviado'],true):null;
   if(!is_array($payload)){
     if(empty($registro['xml_recebido'])){ $this->responder(['status'=>false,'id'=>(int)$id,'error'=>'Sem payload/XML para reprocessar.'],422); return; }
-    try{ $payload=$this->NFComMapper->convert($registro['xml_recebido'],$registro['chave_cofaturamento']); }
+    try{ $payload=$this->nfcom_mapper->convert($registro['xml_recebido'],$registro['chave_cofaturamento']); }
     catch(Exception $e){
       $this->nfcom_model->atualizar($id,['status'=>1,'motivo'=>$this->truncar($e->getMessage(),255)]);
       $this->responder(['status'=>false,'id'=>(int)$id,'error'=>$e->getMessage()],422); return;
@@ -87,13 +88,15 @@ class Nfcom extends CI_Controller{
   */
  private function processarEnvio($id,array $payload,$httpSucesso){
   try{
-    $r=$this->apiemissor62->enviar($payload);
+    $r=$this->api_emissor62->enviar($payload);
   }catch(Exception $e){
     // Falha de transporte (cURL): grava e retorna 502.
     $this->nfcom_model->atualizar($id,['status'=>1,'motivo'=>$this->truncar($e->getMessage(),255)]);
     $this->responder(['status'=>false,'id'=>$id,'error'=>$e->getMessage()],502); return;
   }
 
+  // Persistencia da resposta + calculo de status centralizados no model
+  // (mesmo ponto usado pela tela de upload do modulo cobilling).
   $dados=$this->extrairDadosResposta($r['response']);
   $ok=($r['http_code']>=200 && $r['http_code']<300 && !empty($dados['sucesso']));
 
