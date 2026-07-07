@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<nfcomProc versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfcom">
+  <NFCom xmlns="http://www.portalfiscal.inf.br/nfcom">
+    <infNFCom versao="1.00" Id="NFCom43260730288995000107620010000000101043134096">
+      <ide>
+        <cUF>43</cUF>
+        <tpAmb>2</tpAmb>
+        <mod>62</mod>
+        <serie>1</serie>
+        <nNF>0</nNF>
+        <cNF>0000000</cNF>
+        <cDV>0</cDV>
+        <dhEmi>2026-07-03T12:20:33-03:00</dhEmi>
+        <tpEmis>1</tpEmis>
+        <nSiteAutoriz>0</nSiteAutoriz>
+        <cMunFG>4313409</cMunFG>
+        <finNFCom>0</finNFCom>
+        <tpFat>0</tpFat>
+        <verProc>API62-v2.31.945.12</verProc>
+      </ide>
+      <dest>
+        <xNome>Flux Tecnologia</xNome>
+        <CNPJ>30288995000107</CNPJ>
+        <indIEDest>1</indIEDest>
+        <IE>0860515850</IE>
+        <enderDest>
+          <xLgr>Rua Joaquim Pedro Soares</xLgr>
+          <nro>560</nro>
+          <xCpl></xCpl>
+          <xBairro>Centro</xBairro>
+          <cMun>4313409</cMun>
+          <xMun>Novo Hamburgo</xMun>
+          <CEP>13010050</CEP>
+          <UF>RS</UF>
+          <cPais>1058</cPais>
+          <xPais>BRASIL</xPais>
+          <fone>19999999999</fone>
+        </enderDest>
+      </dest>
+      <assinante>
+        <iCodAssinante>93340688257</iCodAssinante>
+        <tpAssinante>1</tpAssinante>
+        <tpServUtil>1</tpServUtil>
+        <nContrato>888887777</nContrato>
+        <dContratoIni>2025-03-27</dContratoIni>
+        <NroTermPrinc>19999999999</NroTermPrinc>
+        <cUFPrinc>RS</cUFPrinc>
+      </assinante>
+      <det nItem="1">
+        <prod>
+          <cProd>999</cProd>
+          <xProd>Serviço telefonia FLUX</xProd>
+          <cClass>100101</cClass>
+          <CFOP>5301</CFOP>
+          <uMed>4</uMed>
+          <qFaturada>1.0000</qFaturada>
+          <vItem>40.00</vItem>
+          <vProd>40.00</vProd>
+        </prod>
+        <imposto>
+          <ICMS00>
+            <CST>00</CST>
+            <vBC>40.00</vBC>
+            <pICMS>17.00</pICMS>
+            <vICMS>6.80</vICMS>
+          </ICMS00>
+          <PIS>
+            <CST>01</CST>
+            <vBC>40.00</vBC>
+            <pPIS>0.6500</pPIS>
+            <vPIS>0.26</vPIS>
+          </PIS>
+          <COFINS>
+            <CST>01</CST>
+            <vBC>40.00</vBC>
+            <pCOFINS>3.0000</pCOFINS>
+            <vCOFINS>1.20</vCOFINS>
+          </COFINS>
+        </imposto>
+      </det>
+      <gFat>
+        <CompetFat>202607</CompetFat>
+        <dVencFat>2026-06-10</dVencFat>
+        <dPerUsoIni>2026-06-10</dPerUsoIni>
+        <dPerUsoFim>2026-06-10</dPerUsoFim>
+        <codBarras>1</codBarras>
+      </gFat>
+      <autXML>
+        <CNPJ>26746798000109</CNPJ>
+      </autXML>
+      <infAdic>
+        <infCpl>Contribuição para o FUST 1% e FUNTTEL 0,5% sobre os valores dos serviços de telecomunicações Não repassados ao cliente</infCpl>
+      </infAdic>
+    </infNFCom>
+  </NFCom>
+</nfcomProc>
