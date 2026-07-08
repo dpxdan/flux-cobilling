@@ -311,7 +311,7 @@ O XML enviado no upload manual traz os dados do **emitente parceiro** (blocos `e
 
 ## Mapeamento aplicado
 
-**`<emit>`** — `CNPJ` ← `accounts.tax_number` (só dígitos) | `xNome` ← `first_name + ' ' + last_name` | `xFant` ← `company_name` (fallback `xNome`).
+**`<emit>`** — `CNPJ` ← `accounts.tax_number` (só dígitos) | `IE` ← `accounts.tax_city_number` (só dígitos; **nova coluna**, ver `database/accounts_alter.sql`) | `xNome` ← `first_name + ' ' + last_name` | `xFant` ← `company_name` (fallback `xNome`).
 
 **`<enderEmit>`** — `xLgr`/`nro` ← split de `address_1` (regex; fallback `nro='S/N'`) | `xCpl` e `xBairro` ← `address_2` (não há coluna de bairro em `accounts`) | `cMun` ← `municipios.codigo_ibge WHERE nome = accounts.city (+ UF se coluna existir)` | `xMun` ← `accounts.city` | `CEP` ← `postal_code` (só dígitos) | `UF` ← `accounts.province` | `fone` ← `telephone_1` (só dígitos) | `email` ← `accounts.email`.
 
@@ -322,7 +322,7 @@ O XML enviado no upload manual traz os dados do **emitente parceiro** (blocos `e
 ## Arquivos alterados
 
 - **`libraries/flux/nfcom_mapper.php`** — novos métodos:
-  - `substituirDadosEmitente($xmlString, array $conta, $codIbge = null): string` — reescreve os 14 nós via `dom_import_simplexml` + `nodeValue` (preserva atributos, namespace e demais filhos).
+  - `substituirDadosEmitente($xmlString, array $conta, $codIbge = null): string` — reescreve os 15 nós (`CNPJ`, `IE`, `xNome`, `xFant`, `xLgr`, `nro`, `xCpl`, `xBairro`, `cMun`, `xMun`, `CEP`, `UF`, `fone`, `email`, `iCodAssinante`, `nContrato`) via `dom_import_simplexml` + `nodeValue` (preserva atributos, namespace e demais filhos).
   - `_splitEndereco($address_1): array` — regex `/^(.*?)[,\s]+(\d+[A-Za-z]*)\s*$/u`.
   - `_setNode(SimpleXMLElement, xpath, value): bool` — helper de substituição atômica.
 
@@ -330,9 +330,16 @@ O XML enviado no upload manual traz os dados do **emitente parceiro** (blocos `e
   - `getCodigoIbgeMunicipio($nome, $uf = null): ?string` — consulta `municipios`. Defensivo: tenta primeiro com filtro de UF (colunas `uf` OR `sigla_uf`) para desambiguar homônimos e cai para busca só por nome se a coluna não existir.
 
 - **`modules/cobilling/controllers/cobilling.php`** — `upload_save()`:
-  - Nova validação dos campos mínimos da conta (`tax_number`, `address_1`, `postal_code`, `city`, `province`, `email`) — bloqueia com mensagem específica se algum estiver vazio.
+  - Nova validação dos campos mínimos da conta (`tax_number`, `tax_city_number`/IE, `address_1`, `postal_code`, `city`, `province`, `email`) — bloqueia com mensagem específica se algum estiver vazio.
   - Lookup do IBGE + chamada a `substituirDadosEmitente` **antes** de `criar()` e `_emitir()`.
   - Aviso não-bloqueante via flashdata quando o município não é encontrado — o `cMun` original do XML fica preservado.
+  - Ao final, redireciona para `cobilling/cobilling_list/` (antes ia para `cobilling/upload`), caindo direto na listagem.
+
+- **`database/accounts_alter.sql`** (novo) — `ALTER TABLE accounts ADD COLUMN tax_city_number varchar(100) ... AFTER id_external;` (armazena a Inscrição Estadual usada em `<emit>/<IE>`) **+** `UPDATE system SET value='https://api.cnpja.com' WHERE name='doc_cnpja_base_url' AND value='https://open.cnpja.com';` (aponta a consulta de CNPJ para a URL autenticada).
+
+### Módulo `accounts` de apoio
+
+O commit `357a87f` também portou para o staging um módulo `accounts` completo (`controllers/accounts.php`, `models/accounts_model.php`, `libraries/accounts_form.php`, `views/*`, `tooltip*.php`) para gestão de contas cliente/revenda/provedor. É **infra de suporte** — dá base ao dropdown/edição de contas consumidos pela tela de co-billing e permite cadastrar os campos (IE, endereço, município) exigidos pela reescrita do emitente. Não faz parte do escopo central do PX-108, mas é dependência para operar a tela de upload fim-a-fim no staging.
 
 ## Cuidados
 
@@ -343,5 +350,26 @@ O XML enviado no upload manual traz os dados do **emitente parceiro** (blocos `e
 ## Verificação
 
 1. `php -l` em `nfcom_mapper.php`, `nfcom_model.php`, `controllers/cobilling.php`.
-2. Script isolado no scratchpad exercitando `substituirDadosEmitente` sobre o XML de exemplo (com conta fake completa), validando via XPath que os 14 campos foram reescritos.
+2. Script isolado no scratchpad exercitando `substituirDadosEmitente` sobre o XML de exemplo (com conta fake completa), validando via XPath que os 15 campos foram reescritos (inclui `IE` ← `tax_city_number`).
 3. Fim-a-fim (integração): upload → conferir na aba "XML recebido" do popup que os dados são da conta Flux; conferir que "Baixar XML" traz o original (com assinatura do parceiro); conferir emissão real no Emissor62 (opção "emitir agora").
+
+---
+
+# Histórico de commits (PX-108)
+
+Ordem cronológica dos commits do staging `flux-cobilling`, agrupados por fase:
+
+**Integração / API (Parte 1)**
+- `dd7b98e` — `feat(cobilling): adiciona integração NFCom via co-faturamento`
+- `8be1442` — `feat(cobilling): integra NFCom via API Emissor62 e adiciona docs`
+- `b491f70` — `feat(payload/xml): adicionado arquivo XML contendo Payload Sem Cobilling`
+
+**Listagem / auditoria (Partes 2–3)**
+- `98ac32b` — `Cria view SQL para listagem de Co-Billing` (`view_nfcom_cobilling`)
+- `949fc02` — `Adiciona suporte para listagem e reprocessamento` (model + form library)
+- `66c7204` — `Implementa interface web de auditoria e gestão` (telas de listagem e detalhes)
+- `372f3fb` — `Atualiza documentação e arquivos de tradução` (docs + i18n pt_BR/en_En)
+- `b057410` — `fix(cobilling): ajusta redirecionamentos, layout e correções de views`
+
+**Reescrita do emitente (Parte 4)**
+- `357a87f` — `feat(cobilling): reescreve emitente do XML com dados da conta` (+ coluna IE `tax_city_number`, módulo `accounts` de apoio, ajustes de popup)
