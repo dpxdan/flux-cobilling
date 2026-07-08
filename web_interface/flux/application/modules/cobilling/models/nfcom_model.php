@@ -153,4 +153,99 @@ class nfcom_model extends CI_Model {
         $s = (string) $s;
         return (strlen($s) > $len) ? substr($s, 0, $len) : $s;
     }
+
+    // ------------------------------------------------------------------
+    // Listagem (view_nfcom_cobilling) - consumida por Cobilling::cobilling_list_json.
+    // ------------------------------------------------------------------
+
+    /**
+     * Consulta paginada/contagem da view view_nfcom_cobilling.
+     * Escopo anti-IDOR: revenda (type==1) so ve os proprios registros.
+     * Filtros do search bar sao aplicados por db_model::build_search().
+     *
+     * @param bool $flag   true = SELECT paginado; false = COUNT total
+     * @param int  $start
+     * @param int  $limit
+     * @return mixed CI DB result (num_rows para count; result_array para select)
+     */
+    public function get_cobilling_list($flag, $start = 0, $limit = 0) {
+        $CI = get_instance();
+        $CI->db_model->build_search('cobilling_list_search');
+        $acc = $CI->session->userdata('accountinfo');
+        $where = array();
+        if (isset($acc['type']) && (int) $acc['type'] === 1) {
+            $where['reseller_id'] = (int) $acc['id'];
+        }
+        if ($flag) {
+            return $CI->db_model->select('*', 'view_nfcom_cobilling', $where, 'created_at', 'DESC', $limit, $start);
+        }
+        return $CI->db_model->countQuery('*', 'view_nfcom_cobilling', $where);
+    }
+
+    /**
+     * Reprocessa um registro: reconverte o payload se necessario, reenvia ao
+     * Emissor62 e persiste o resultado. Ponto unico usado pela tela de
+     * listagem (Cobilling::cobilling_reprocess) e reutilizavel pela API.
+     *
+     * @param int $id
+     * @return array ['ok'=>bool, 'http_code'=>int, 'data'=>array|null, 'error'=>string|null, 'id'=>int]
+     */
+    public function reprocessar_registro($id) {
+        $id = (int) $id;
+        $reg = $this->buscar($id);
+        if ($reg === null) {
+            return array('ok'=>false, 'http_code'=>404, 'data'=>null, 'error'=>'not_found', 'id'=>$id);
+        }
+        $CI = get_instance();
+
+        $payload = (!empty($reg['payload_enviado'])) ? json_decode($reg['payload_enviado'], true) : null;
+        if (!is_array($payload)) {
+            if (empty($reg['xml_recebido'])) {
+                return array('ok'=>false, 'http_code'=>422, 'data'=>null, 'error'=>'sem_payload_ou_xml', 'id'=>$id);
+            }
+            try {
+                $payload = $CI->nfcom_mapper->convert($reg['xml_recebido'], $reg['chave_cofaturamento']);
+            } catch (Exception $e) {
+                $this->atualizar($id, array('status'=>1, 'motivo'=>$this->truncar($e->getMessage(), 255)));
+                return array('ok'=>false, 'http_code'=>422, 'data'=>null, 'error'=>$e->getMessage(), 'id'=>$id);
+            }
+            $this->atualizar($id, array('payload_enviado' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
+        }
+
+        $this->incrementar_tentativa($id);
+
+        try {
+            $r = $CI->api_emissor62->enviar($payload);
+        } catch (Exception $e) {
+            $this->atualizar($id, array('status'=>1, 'motivo'=>$this->truncar($e->getMessage(), 255)));
+            return array('ok'=>false, 'http_code'=>502, 'data'=>null, 'error'=>$e->getMessage(), 'id'=>$id);
+        }
+
+        $res = $this->registrar_resposta($id, $r['response'], $r['http_code']);
+        return array(
+            'ok'        => (bool) $res['ok'],
+            'http_code' => (int) $r['http_code'],
+            'data'      => $res['data'],
+            'error'     => null,
+            'id'        => $id,
+        );
+    }
+
+    /**
+     * Hard delete restrito ao tenant. Revenda so pode remover seus registros;
+     * admin/superadmin (reseller_id=0) remove qualquer um.
+     * Nao remove o arquivo fisico em attachments/nfcom/ (ver Notas do plano).
+     *
+     * @param int $id
+     * @param int $reseller_id
+     * @return bool
+     */
+    public function excluir($id, $reseller_id) {
+        $this->db->where('id', (int) $id);
+        if ((int) $reseller_id !== 0) {
+            $this->db->where('reseller_id', (int) $reseller_id);
+        }
+        $this->db->delete($this->table);
+        return ($this->db->affected_rows() > 0);
+    }
 }
