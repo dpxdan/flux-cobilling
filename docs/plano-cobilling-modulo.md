@@ -214,3 +214,87 @@ Roteável em `base_url()."cobilling/upload"`. Para o menu: inserir linha em `rol
 ## Notas (Parte 2)
 - A tela depende do ambiente FluxSBC (accounts, sessão, `master.php`, assets) — por isso é entregue em formato HMVC e testada na integração, não no staging.
 - Escopo desta parte é a **tela de upload**. Uma tela de **listagem/reprocessamento** dos registros (grid + botão reprocessar) fica como extensão futura.
+
+---
+
+# Parte 3 — Tela web de listagem/auditoria/reprocessamento
+
+## Contexto
+
+Fechar o ciclo: além da API e do upload, o operador (admin ou revenda) precisa **auditar** as notas gravadas, **ver detalhes** do fluxo (XML/payload/response), **reprocessar** falhas e **baixar** o XML original a partir da UI do FluxSBC. A tela consome uma **VIEW SQL** (`view_nfcom_cobilling`) que junta `nfcom_cobilling` com `accounts` para trazer `number`, `customer` e demais campos do cliente na mesma linha.
+
+**Padrão adotado (mapeado em `sbc-fluxv6/.../modules/refill_coupon` e `.../modules/invoices`):**
+- **Flexigrid server-side** via `assets/js/module_js/generate_grid.js` (`build_grid`, `post_request_for_search`, `clear_search_request`).
+- Convenção `cobilling_list` / `_list_json` / `_list_search` / `_clearsearchfilter` no controller.
+- Anti-IDOR: filtro `reseller_id` aplicado no MODEL (`if ($acc['type'] == 1) $where['reseller_id'] = $acc['id'];`).
+- Sem tocar em `libraries/flux/common.php`: as células são montadas manualmente no `_list_json` (padrão do `invoices_model`) — badges de status/origem, truncagem de chaves e botões de ação ficam no controller do módulo.
+
+## Arquivos criados / modificados
+
+Caminhos relativos a `flux-cobilling/`.
+
+### 1. `database/view_nfcom_cobilling.sql` (NOVO)
+VIEW SQL `CREATE OR REPLACE ... SQL SECURITY INVOKER` — `LEFT JOIN accounts` + coluna derivada `status_label` (CASE). Sem `ORDER BY` na definição (o flexigrid ordena via `$_GET[sortname/sortorder]`).
+
+### 2. `web_interface/flux/application/modules/cobilling/models/nfcom_model.php` (MODIFICADO)
+Três métodos novos:
+- `get_cobilling_list($flag, $start=0, $limit=0)` — consulta `view_nfcom_cobilling` com filtro de tenant e `build_search('cobilling_list_search')`.
+- `reprocessar_registro($id)` — ponto único de reprocessamento (busca → reconverte payload se necessário → `incrementar_tentativa` → `api_emissor62->enviar()` → `registrar_resposta()`). Reutilizável pela API na sequência.
+- `excluir($id, $reseller_id)` — hard delete restrito ao tenant. Não remove o arquivo físico nesta versão (TODO documentado).
+
+### 3. `web_interface/flux/application/modules/cobilling/libraries/cobilling_form.php` (NOVO)
+`Cobilling_form`:
+- `build_cobilling_grid()` — layout do flexigrid (Data, Conta, Cliente, Nº NFCom, Chaves, Origem, Status, Situação, Motivo, HTTP, Tentativas, Ação).
+- `build_grid_buttons_cobilling()` — botões acima da grade: **New Upload** (redireciona para `cobilling/upload`) e **Export** CSV.
+- `get_cobilling_search_form()` — filtros por data (`from_date`/`to_date`), conta, cliente, nº NFCom, chave NFCom, chave cofaturamento, status (INPUT integer com hint `0/1/2`) e origem (INPUT string).
+
+> Status e Origem são INPUT (não SELECT) porque dropdowns custom exigem callback em `libraries/flux/common.php` (`set_XXX_status`), e não alteramos esse arquivo no staging. Na integração ao FluxSBC real, podem virar dropdowns adicionando os dois callbacks em `common.php`.
+
+### 4. `web_interface/flux/application/modules/cobilling/controllers/cobilling.php` (MODIFICADO)
+Mantém `upload`/`upload_save`. **Adiciona**:
+- `cobilling_list`, `cobilling_list_json`, `cobilling_list_search`, `cobilling_clearsearchfilter`.
+- `cobilling_view($id)` — popup facebox.
+- `cobilling_reprocess($id)` — usa `nfcom_model->reprocessar_registro()` + flashdata + redirect.
+- `cobilling_download_xml($id)` — prefere arquivo físico em `attachments/nfcom/`; cai no `xml_recebido` do banco.
+- `cobilling_list_delete($id)` — restrito a admin/superadmin (`type < 1`).
+- `cobilling_export()` — CSV de metadados via `csv_helper::array_to_csv`.
+- Helpers privados: `_registro_do_tenant` (anti-IDOR), `_montar_cell`, `_status_badge`, `_origem_badge`, `_fmt_chave`, `_fmt_data`, `_xml_pretty`, `_json_pretty`, `_action_buttons`, `_is_admin`.
+
+### 5. `web_interface/flux/application/modules/cobilling/views/view_nfcom_list.php` (NOVO)
+Esqueleto Flexigrid seguindo `refill_coupon`: `extend('master.php')`, `startblock('extra_head')` com `build_grid('cobilling_grid', ...)`, `startblock('content')` com search bar oculto (`#search_bar`) e `<table id="cobilling_grid">` dentro de `<form id="ListForm" action="cobilling/cobilling_list_delete/0/">`.
+
+### 6. `web_interface/flux/application/modules/cobilling/views/view_nfcom_details.php` (NOVO)
+Popup facebox com **abas Bootstrap** (Nav-tabs): Resumo, XML recebido, Payload enviado, Resposta. Formatação bonita (`DOMDocument::formatOutput` para XML e `JSON_PRETTY_PRINT` para JSON). Botões de ação diretos no popup (Baixar XML, Reprocessar).
+
+## Rotas (auto-routing HMVC)
+
+- `cobilling/cobilling_list` — tela
+- `cobilling/cobilling_list_json` — AJAX flexigrid
+- `cobilling/cobilling_list_search` / `cobilling_clearsearchfilter`
+- `cobilling/cobilling_view/{id}` — popup
+- `cobilling/cobilling_reprocess/{id}`
+- `cobilling/cobilling_download_xml/{id}`
+- `cobilling/cobilling_list_delete/{id}` (admin)
+- `cobilling/cobilling_export`
+
+Para o menu no FluxSBC real: adicionar linha em `roles_and_permission` com `module_url='cobilling/cobilling_list'` (fora do staging).
+
+## Verificação (Parte 3)
+
+1. **Lint:** `php -l` em `controllers/cobilling.php`, `models/nfcom_model.php`, `libraries/cobilling_form.php`, `views/view_nfcom_list.php`, `views/view_nfcom_details.php`.
+2. **SQL:** executar `database/view_nfcom_cobilling.sql` em MySQL local; `EXPLAIN SELECT * FROM view_nfcom_cobilling LIMIT 1;` para validar plano.
+3. **Fim-a-fim (na integração FluxSBC):**
+   - Rodar `nfcom_cobilling.sql` (Parte 1) ou `nfcom_cobilling_alter.sql` (Parte 2) + `view_nfcom_cobilling.sql`.
+   - Copiar o módulo para `application/modules/cobilling/` e o controller flat `Nfcom.php` para `application/controllers/`.
+   - Logar como reseller e como admin em `cobilling/cobilling_list`.
+   - Testar cada filtro (data, número, cliente, status, origem), ordenação e paginação (`rp` = 10/25/50/100).
+   - Testar ações: `VIEW` (popup com 4 abas), `RESEND` (registro `status=1` que passa a `status=0`), `DOWNLOAD` (`origem=upload` → arquivo físico; `origem=api` → fallback), `DELETE` (só admin).
+   - Export CSV: baixar, abrir com UTF-8 (BOM do helper), conferir cabeçalhos.
+   - IDOR: reseller A tentando ver/reprocessar/baixar `id` do reseller B → rejeita silenciosamente ou 404.
+
+## Notas (Parte 3)
+
+- **Callbacks de status/origem como dropdown**: viram melhoria futura ao adicionar `set_nfcom_status` e `set_nfcom_origem` em `libraries/flux/common.php` (fora do staging).
+- **Remoção do arquivo físico no `excluir()`**: TODO explícito. Requer garantir que nenhum outro registro referencia o mesmo `xml_file` (colisão altamente improvável pelo nome único gerado, mas seguro checar) — usar `@unlink($dir.$row['xml_file'])` só após a checagem.
+- **Refatorar `application/controllers/Nfcom.php::reprocessar`** para consumir `nfcom_model->reprocessar_registro()` fica como follow-up (elimina duplicação da lógica `processarEnvio`).
+- **SQL SECURITY**: a VIEW versionada usa `INVOKER` (respeita permissões do usuário runtime). O dump que veio da UI do MySQL tinha `DEFINER=root@localhost SQL SECURITY DEFINER` — descartado para produção.
