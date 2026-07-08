@@ -82,16 +82,35 @@ class cobilling extends MX_Controller {
 
         // 4) Le o conteudo e valida o XML (parse) + extrai a chave de cofaturamento.
         $xml = file_get_contents($_FILES['nfcom_xml']['tmp_name']);
-        
-//        $this->flux_log->write_log('upload_save', json_encode($xml));
+
         try {
             $chave = $this->nfcom_mapper->extrairChave($xml);
         } catch (Exception $e) {
-            $this->flux_log->write_log('error', json_encode($e->getMessage()));
             return $this->_falha(gettext('XML inválido: ') . $e->getMessage());
         }
 
-        // 5) Move o arquivo para o destino, com nome gerado pelo servidor (evita path traversal).
+        // 5) Valida campos minimos da conta (necessarios para reescrever o
+        //    emitente). Convencao FluxSBC: accounts.city=municipio, province=UF.
+        $obrig = array(
+            'tax_number'  => gettext('CNPJ'),
+            'tax_city_number'  => gettext('IE'),
+            'address_1'   => gettext('Endereço'),
+            'postal_code' => gettext('CEP'),
+            'city'        => gettext('Município'),
+            'province'    => gettext('UF'),
+            'email'       => gettext('E-mail'),
+        );
+        foreach ($obrig as $col => $label) {
+            if (empty($conta[$col])) {
+                return $this->_falha(sprintf(gettext('A conta selecionada não tem "%s" cadastrado.'), $label));
+            }
+        }
+
+        // 6) Busca o codigo IBGE do municipio da conta na tabela municipios.
+        $cod_ibge = $this->nfcom_model->getCodigoIbgeMunicipio($conta['city'], $conta['province']);
+
+        // 7) Move o arquivo ORIGINAL para o destino - preserva assinatura digital
+        //    do parceiro + auditoria. O banco recebera a versao modificada abaixo.
         $dir = $this->config->item('nfcom_upload_path');
         if (empty($dir)) $dir = getcwd() . '/attachments/nfcom/';
         $dir = rtrim($dir, '/') . '/';
@@ -101,25 +120,44 @@ class cobilling extends MX_Controller {
             return $this->_falha(gettext('Falha ao salvar o arquivo. Tente novamente.'));
         }
 
-        // 6) Registro inicial vinculado a conta (status 2 = pendente).
+        // 8) Substitui emit/enderEmit/assinante pelos dados da conta Flux.
+        try {
+            $xml_modificado = $this->nfcom_mapper->substituirDadosEmitente($xml, $conta, $cod_ibge);
+        } catch (Exception $e) {
+            $this->flux_log->write_log('error', json_encode($e->getMessage()));
+            return $this->_falha(gettext('Falha ao reescrever o emitente do XML: ') . $e->getMessage());
+        }
+
+        // 9) Registro inicial vinculado a conta (status 2 = pendente).
+        //    xml_recebido = XML MODIFICADO (foi o que sera convertido/enviado).
+        //    xml_file     = nome do arquivo fisico com o XML ORIGINAL.
         $id = $this->nfcom_model->criar(array(
             'reseller_id'         => (isset($conta['reseller_id']) && $conta['reseller_id'] !== NULL) ? (int) $conta['reseller_id'] : NULL,
             'accountid'           => $accountid,
             'chave_cofaturamento' => ($chave !== '' ? $chave : NULL),
-            'xml_recebido'        => $xml,
+            'xml_recebido'        => $xml_modificado,
             'xml_file'            => $nome,
             'origem'              => 'upload',
             'status'              => 2,
         ));
 
-        // 7) Emissao opcional (checkbox "emitir agora").
+        // 10) Aviso nao-bloqueante quando o municipio nao foi encontrado (o cMun
+        //     original do parceiro permanece no XML modificado).
+        if ($cod_ibge === null) {
+            $this->session->set_flashdata('flux_notification',
+                sprintf(gettext('Município "%s" não encontrado na tabela municipios — cMun original preservado no XML.'), $conta['city'])
+            );
+        }
+
+        // 11) Emissao opcional (checkbox "emitir agora").
         if ($this->input->post('emitir_agora')) {
-            $this->_emitir($id, $xml);
-        } else {
+            $this->_emitir($id, $xml_modificado);
+        } else if ($cod_ibge !== null) {
+            // So sobrescreve a flashdata de sucesso se nao houve o aviso do cMun.
             $this->session->set_flashdata('flux_errormsg', sprintf(gettext('XML importado e vinculado à conta (registro #%d).'), $id));
         }
 
-        redirect(base_url() . 'cobilling/upload');
+        redirect(base_url() . 'cobilling/cobilling_list/');
     }
 
     // --- helpers ---
@@ -130,9 +168,7 @@ class cobilling extends MX_Controller {
         try {
             $payload = $this->nfcom_mapper->convert($xml);
             $this->nfcom_model->atualizar($id, array('payload_enviado' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
-            $this->flux_log->write_log('payload_enviado', json_encode($payload));
             $r   = $this->api_emissor62->enviar($payload);
-            $this->flux_log->write_log('enviar', json_encode($r));
             $res = $this->nfcom_model->registrar_resposta($id, $r['response'], $r['http_code']);
             if ($res['ok']) {
                 $this->session->set_flashdata('flux_errormsg', sprintf(gettext('NFCom emitida com sucesso (registro #%d).'), $id));
@@ -141,7 +177,6 @@ class cobilling extends MX_Controller {
             }
         } catch (Exception $e) {
             $this->nfcom_model->atualizar($id, array('status' => 1, 'motivo' => substr($e->getMessage(), 0, 255)));
-            $this->flux_log->write_log('Erro', json_encode($e->getMessage()));
             $this->session->set_flashdata('flux_notification', gettext('Erro de comunicação com o Emissor62: ') . $e->getMessage());
         }
     }

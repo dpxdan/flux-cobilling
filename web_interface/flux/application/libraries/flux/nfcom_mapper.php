@@ -105,4 +105,108 @@ public function __construct() {
   if($inf!==null && preg_match('/(\d{44})/',(string)$inf['Id'],$m)) return $m[1];
   return '';
  }
+
+ // ------------------------------------------------------------------
+ // Substituicao dos dados do emitente com os dados da conta Flux.
+ // Consumido por Cobilling::upload_save no fluxo de co-faturamento.
+ //
+ // Semantica das colunas de accounts (nao inverter):
+ //   accounts.city     = municipio (nome)
+ //   accounts.province = UF (sigla)
+ // Confirmado em sbc-fluxv6/.../accounts_model::update_account_from_doc.
+ // ------------------------------------------------------------------
+
+ /**
+  * Reescreve os blocos emit/enderEmit/assinante do XML com os dados da conta
+  * Flux selecionada no upload. O XML original (com assinatura valida do
+  * parceiro) fica preservado no arquivo fisico em attachments/nfcom/.
+  *
+  * @param string      $xmlString XML original recebido do parceiro.
+  * @param array       $conta     Registro de accounts (todas as colunas usadas abaixo).
+  * @param string|null $codIbge   Codigo IBGE do municipio (via nfcom_model::getCodigoIbgeMunicipio).
+  *                               Se null, o cMun original nao e sobrescrito.
+  * @return string XML modificado (asXML). Assinatura fica invalida - aceitavel
+  *                pois o Emissor62 consome o JSON convertido, nao o XML.
+  * @throws Exception se o XML nao contiver os blocos esperados.
+  */
+ public function substituirDadosEmitente($xmlString, array $conta, $codIbge = null) {
+  $xml = $this->carregar($xmlString);
+
+  // Nome e nome fantasia
+  $xNome = trim(($conta['first_name'] ?? '') . ' ' . ($conta['last_name'] ?? ''));
+  $xFant = !empty($conta['company_name']) ? $conta['company_name'] : $xNome;
+
+  // Endereco: split de address_1 em logradouro + numero
+  $endereco = $this->_splitEndereco((string) ($conta['address_1'] ?? ''));
+
+  // Sanitizacoes
+  $cnpj    = preg_replace('/\D+/', '', (string) ($conta['tax_number']   ?? ''));
+  $ie      = preg_replace('/\D+/', '', (string) ($conta['tax_city_number']   ?? ''));
+  $cep     = preg_replace('/\D+/', '', (string) ($conta['postal_code']  ?? ''));
+  $fone    = preg_replace('/\D+/', '', (string) ($conta['telephone_1']  ?? ''));
+
+  // <emit>
+  $this->_setNode($xml, '//n:emit/n:CNPJ',  $cnpj);
+  $this->_setNode($xml, '//n:emit/n:IE',  $ie);
+  $this->_setNode($xml, '//n:emit/n:xNome', $xNome);
+  $this->_setNode($xml, '//n:emit/n:xFant', $xFant);
+
+  // <enderEmit>
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:xLgr',    $endereco['xLgr']);
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:nro',     $endereco['nro']);
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:xCpl',    (string) ($conta['address_2'] ?? ''));
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:xBairro', (string) ($conta['address_2'] ?? ''));
+  if ($codIbge !== null && $codIbge !== '') {
+   $this->_setNode($xml, '//n:emit/n:enderEmit/n:cMun', (string) $codIbge);
+  }
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:xMun',  (string) ($conta['city']     ?? ''));
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:CEP',   $cep);
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:UF',    (string) ($conta['province'] ?? ''));
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:fone',  $fone);
+  $this->_setNode($xml, '//n:emit/n:enderEmit/n:email', (string) ($conta['email']    ?? ''));
+
+  // <assinante>
+  $this->_setNode($xml, '//n:assinante/n:iCodAssinante', (string) (int) ($conta['id'] ?? 0));
+  $this->_setNode($xml, '//n:assinante/n:nContrato',     (string) ($conta['number'] ?? ''));
+
+  $out = $xml->asXML();
+  if ($out === false) throw new Exception('Falha ao serializar XML modificado');
+  return $out;
+ }
+
+ /**
+  * Substitui o texto de um unico elemento localizado por XPath (com namespace n).
+  * Preserva atributos e nao adiciona novos filhos alem do textNode.
+  *
+  * @return bool true se substituido; false se o nodo nao existir.
+  */
+ private function _setNode(SimpleXMLElement $xml, $xpath, $value) {
+  $nodes = $xml->xpath($xpath);
+  if (empty($nodes)) return false;
+  $dom = dom_import_simplexml($nodes[0]);
+  while ($dom->hasChildNodes()) {
+   $dom->removeChild($dom->firstChild);
+  }
+  $dom->appendChild($dom->ownerDocument->createTextNode((string) $value));
+  return true;
+ }
+
+ /**
+  * Separa "logradouro" e "numero" de accounts.address_1.
+  * Aceita "Rua Foo, 123", "Rua Foo 123", "Av. Bar 45B" etc.
+  * Fallback: nro='S/N' quando nao encontra numero final.
+  *
+  * @param string $address_1
+  * @return array{xLgr:string,nro:string}
+  */
+ private function _splitEndereco($address_1) {
+  $s = trim((string) $address_1);
+  if ($s === '') return array('xLgr' => '', 'nro' => 'S/N');
+  if (preg_match('/^(.*?)[,\s]+(\d+[A-Za-z]*)\s*$/u', $s, $m)) {
+   $xLgr = trim($m[1]);
+   $nro  = $m[2];
+   if ($xLgr !== '' && $nro !== '') return array('xLgr' => $xLgr, 'nro' => $nro);
+  }
+  return array('xLgr' => $s, 'nro' => 'S/N');
+ }
 }

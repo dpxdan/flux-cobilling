@@ -291,11 +291,56 @@ class nfcom_model extends CI_Model {
     {
         $this->db->from('nfcom_cobilling');
         $this->db->where('id', (int)$id);
-    
+
         if ((int)$reseller_id > 0) {
             $this->db->where('reseller_id', (int)$reseller_id);
         }
-    
+
         return $this->db->get()->row_array();
+    }
+
+    /**
+     * Retorna o codigo IBGE do municipio consultando a tabela municipios
+     * (mantida pelo usuario) - usado por Cobilling::upload_save para preencher
+     * <cMun> no bloco enderEmit do XML modificado.
+     *
+     * Convencao (accounts): city=municipio, province=UF - portanto o nome do
+     * municipio vem de accounts.city.
+     *
+     * Estrategia defensiva de schema:
+     *   - Tenta filtrar por UF (colunas 'uf' ou 'sigla_uf') se informada.
+     *   - Se a coluna nao existir (schema variante), cai para busca somente pelo nome.
+     *   - Case/accent insensitivity depende do collation da tabela.
+     *
+     * @param string      $nome Nome do municipio (accounts.city).
+     * @param string|null $uf   Sigla UF (accounts.province) para desambiguar homonimos.
+     * @return string|null Codigo IBGE (string) ou null se nao encontrado.
+     */
+    public function getCodigoIbgeMunicipio($nome, $uf = null) {
+        $nome = trim((string) $nome);
+        if ($nome === '') return null;
+
+        // Tentativa 1: com filtro de UF (se informada e se a coluna existir).
+        if ($uf !== null && trim((string) $uf) !== '') {
+            $uf = strtoupper(trim((string) $uf));
+            $sql = "SELECT codigo_ibge FROM municipios "
+                 . "WHERE nome = ? AND (uf = ? OR sigla_uf = ?) LIMIT 1";
+            $q = @$this->db->query($sql, array($nome, $uf, $uf));
+            if ($q !== false && $q->num_rows() > 0) {
+                $row = $q->row_array();
+                if (!empty($row['codigo_ibge'])) return (string) $row['codigo_ibge'];
+            }
+        }
+
+        // Tentativa 2: somente pelo nome.
+        $q = @$this->db->query(
+            "SELECT codigo_ibge FROM municipios WHERE nome = ? LIMIT 1",
+            array($nome)
+        );
+        if ($q !== false && $q->num_rows() > 0) {
+            $row = $q->row_array();
+            if (!empty($row['codigo_ibge'])) return (string) $row['codigo_ibge'];
+        }
+        return null;
     }
 }

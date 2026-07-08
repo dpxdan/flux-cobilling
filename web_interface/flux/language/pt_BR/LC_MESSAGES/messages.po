@@ -8916,3 +8916,7 @@ msgstr "Abrir DANFE"
 msgid "Conta"
 msgstr "Conta"
 
+msgid "IE Number"
+msgstr "Inscrição Estadual"
+
+

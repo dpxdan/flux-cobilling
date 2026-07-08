@@ -298,3 +298,50 @@ Para o menu no FluxSBC real: adicionar linha em `roles_and_permission` com `modu
 - **Remoção do arquivo físico no `excluir()`**: TODO explícito. Requer garantir que nenhum outro registro referencia o mesmo `xml_file` (colisão altamente improvável pelo nome único gerado, mas seguro checar) — usar `@unlink($dir.$row['xml_file'])` só após a checagem.
 - **Refatorar `application/controllers/Nfcom.php::reprocessar`** para consumir `nfcom_model->reprocessar_registro()` fica como follow-up (elimina duplicação da lógica `processarEnvio`).
 - **SQL SECURITY**: a VIEW versionada usa `INVOKER` (respeita permissões do usuário runtime). O dump que veio da UI do MySQL tinha `DEFINER=root@localhost SQL SECURITY DEFINER` — descartado para produção.
+
+---
+
+# Parte 4 — Reescrita do emitente no XML durante o upload
+
+## Contexto
+
+O XML enviado no upload manual traz os dados do **emitente parceiro** (blocos `emit`, `enderEmit` e `assinante`). No fluxo de co-faturamento, antes de gravar/enviar precisamos substituir esses blocos pelos dados da **conta Flux selecionada** no dropdown, transformando o XML "referência do parceiro" numa NFCom emitida em nome do cliente Flux.
+
+**Preservação**: o arquivo físico em `attachments/nfcom/` fica com o XML **original** (assinatura digital do parceiro intacta, auditoria mantida). O `xml_recebido` no banco fica com o XML **modificado** — que é o que efetivamente foi convertido em payload e enviado ao Emissor62.
+
+## Mapeamento aplicado
+
+**`<emit>`** — `CNPJ` ← `accounts.tax_number` (só dígitos) | `xNome` ← `first_name + ' ' + last_name` | `xFant` ← `company_name` (fallback `xNome`).
+
+**`<enderEmit>`** — `xLgr`/`nro` ← split de `address_1` (regex; fallback `nro='S/N'`) | `xCpl` e `xBairro` ← `address_2` (não há coluna de bairro em `accounts`) | `cMun` ← `municipios.codigo_ibge WHERE nome = accounts.city (+ UF se coluna existir)` | `xMun` ← `accounts.city` | `CEP` ← `postal_code` (só dígitos) | `UF` ← `accounts.province` | `fone` ← `telephone_1` (só dígitos) | `email` ← `accounts.email`.
+
+**`<assinante>`** — `iCodAssinante` ← `accounts.id` | `nContrato` ← `accounts.number`.
+
+> **Semântica de `accounts`**: `city` = município, `province` = UF (confirmado em `accounts_model::update_account_from_doc` do sbc-fluxv6). Contra-intuitivo mas correto.
+
+## Arquivos alterados
+
+- **`libraries/flux/nfcom_mapper.php`** — novos métodos:
+  - `substituirDadosEmitente($xmlString, array $conta, $codIbge = null): string` — reescreve os 14 nós via `dom_import_simplexml` + `nodeValue` (preserva atributos, namespace e demais filhos).
+  - `_splitEndereco($address_1): array` — regex `/^(.*?)[,\s]+(\d+[A-Za-z]*)\s*$/u`.
+  - `_setNode(SimpleXMLElement, xpath, value): bool` — helper de substituição atômica.
+
+- **`modules/cobilling/models/nfcom_model.php`** — novo método:
+  - `getCodigoIbgeMunicipio($nome, $uf = null): ?string` — consulta `municipios`. Defensivo: tenta primeiro com filtro de UF (colunas `uf` OR `sigla_uf`) para desambiguar homônimos e cai para busca só por nome se a coluna não existir.
+
+- **`modules/cobilling/controllers/cobilling.php`** — `upload_save()`:
+  - Nova validação dos campos mínimos da conta (`tax_number`, `address_1`, `postal_code`, `city`, `province`, `email`) — bloqueia com mensagem específica se algum estiver vazio.
+  - Lookup do IBGE + chamada a `substituirDadosEmitente` **antes** de `criar()` e `_emitir()`.
+  - Aviso não-bloqueante via flashdata quando o município não é encontrado — o `cMun` original do XML fica preservado.
+
+## Cuidados
+
+- **Assinatura digital** do parceiro fica inválida no XML modificado — aceitável porque o Emissor62 consome o JSON convertido, não o XML.  O arquivo físico em `attachments/nfcom/` mantém o XML assinado.
+- **Case/accent insensitivity** do lookup do IBGE depende do collation da tabela `municipios`. Se for `utf8mb4_0900_ai_ci` (padrão moderno), "Novo Hamburgo" bate com "NOVO HAMBURGO" etc.
+- **Schema variante da `municipios`**: o método assume colunas `nome` e `codigo_ibge`; UF é opcional (`uf` ou `sigla_uf`). Ajustar no model se o schema real for diferente (ex.: `cod_ibge` como no `sbc-fluxv6`).
+
+## Verificação
+
+1. `php -l` em `nfcom_mapper.php`, `nfcom_model.php`, `controllers/cobilling.php`.
+2. Script isolado no scratchpad exercitando `substituirDadosEmitente` sobre o XML de exemplo (com conta fake completa), validando via XPath que os 14 campos foram reescritos.
+3. Fim-a-fim (integração): upload → conferir na aba "XML recebido" do popup que os dados são da conta Flux; conferir que "Baixar XML" traz o original (com assinatura do parceiro); conferir emissão real no Emissor62 (opção "emitir agora").

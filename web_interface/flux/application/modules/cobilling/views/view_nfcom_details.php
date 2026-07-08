@@ -1,4 +1,5 @@
-<?php if (!defined('BASEPATH')) exit('No direct script access allowed'); ?>
+<?php include(FCPATH.'application/views/popup_header.php'); ?>
+<link rel="stylesheet" href="<?php echo base_url(); ?>assets/css/flexigrid.css" type="text/css">
 <?php
 // Popup facebox: fragmento HTML (sem master.php).
 // Recebe: $reg (registro), $xml_pretty, $payload_pretty, $response_pretty,
@@ -21,6 +22,22 @@ $origem         = isset($reg['origem']) ? (string) $reg['origem'] : '';
 $created_at     = isset($reg['created_at']) ? (string) $reg['created_at'] : '';
 $updated_at     = isset($reg['updated_at']) ? (string) $reg['updated_at'] : '';
 ?>
+<section class="slice m-0">
+  <div class="w-section inverse p-0">
+    <div>
+      <div>
+        <div class="col-md-12 p-0 card-header">
+          <h3 class="fw4 p-4 m-0"><?php echo $page_title; ?></h3>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div>
+  <div>
+    <section class="slice m-0">
+
 <div class="cobilling-details" style="max-width: 900px; min-width: 700px;">
     <h4 class="mb-3"><?php echo gettext('Detalhes da NFCom Co-Billing'); ?> #<?php echo $id; ?></h4>
 
@@ -135,4 +152,7 @@ $updated_at     = isset($reg['updated_at']) ? (string) $reg['updated_at'] : '';
             <pre style="max-height: 50vh; overflow: auto;"><?php echo htmlspecialchars((string) $response_pretty, ENT_QUOTES, 'UTF-8'); ?></pre>
         </div>
     </div>
+</div>
+    </section>
+  </div>
 </div>
