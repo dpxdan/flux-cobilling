@@ -257,7 +257,7 @@ class cobilling extends MX_Controller {
         $reg = $this->_registro_do_tenant((int) $id);
         if ($reg === null) {
             $this->session->set_flashdata('flux_notification', gettext('Registro não encontrado ou sem permissão.'));
-            redirect(base_url() . 'cobilling/cobilling_list');
+            redirect(base_url() . 'cobilling/cobilling_list/');
         }
         $r = $this->nfcom_model->reprocessar_registro((int) $id);
         if (!empty($r['ok'])) {
@@ -266,7 +266,7 @@ class cobilling extends MX_Controller {
             $msg = !empty($r['error']) ? $r['error'] : sprintf('HTTP %d', (int) $r['http_code']);
             $this->session->set_flashdata('flux_notification', sprintf(gettext('Falha ao reprocessar #%d: %s'), (int) $id, $msg));
         }
-        redirect(base_url() . 'cobilling/cobilling_list');
+        redirect(base_url() . 'cobilling/cobilling_list/');
     }
 
     /**
@@ -301,11 +301,11 @@ class cobilling extends MX_Controller {
     public function cobilling_list_delete($id = 0) {
         if (!$this->_is_admin()) {
             $this->session->set_flashdata('flux_notification', gettext('Ação restrita a administradores.'));
-            redirect(base_url() . 'cobilling/cobilling_list');
+            redirect(base_url() . 'cobilling/cobilling_list/');
         }
         $id = (int) $id;
         if ($id <= 0) {
-            redirect(base_url() . 'cobilling/cobilling_list');
+            redirect(base_url() . 'cobilling/cobilling_list/');
         }
         $ok = $this->nfcom_model->excluir($id, 0); // admin: sem filtro de reseller
         if ($ok) {
@@ -313,7 +313,7 @@ class cobilling extends MX_Controller {
         } else {
             $this->session->set_flashdata('flux_notification', sprintf(gettext('Não foi possível excluir o registro #%d.'), $id));
         }
-        redirect(base_url() . 'cobilling/cobilling_list');
+        redirect(base_url() . 'cobilling/cobilling_list/');
     }
 
     /**
@@ -449,22 +449,12 @@ class cobilling extends MX_Controller {
     /** Botoes de acao por linha (VIEW/RESEND/DOWNLOAD/DELETE). */
     private function _action_buttons($id, array $row, $is_admin) {
         $base = base_url();
-        $view = '<a href="' . $base . 'cobilling/cobilling_view/' . $id . '" '
-              . 'class="btn btn-royelblue btn-sm facebox" rel="facebox" '
-              . 'title="' . gettext('Detalhes') . '"><i class="fa fa-search fa-fw"></i></a>';
-        $resend = '<a href="' . $base . 'cobilling/cobilling_reprocess/' . $id . '" '
-                . 'class="btn btn-royelblue btn-sm" '
-                . 'onclick="return confirm(\'' . gettext('Reprocessar esta NFCom?') . '\');" '
-                . 'title="' . gettext('Reprocessar') . '"><i class="fa fa-repeat fa-fw"></i></a>';
-        $dl = '<a href="' . $base . 'cobilling/cobilling_download_xml/' . $id . '" '
-            . 'class="btn btn-royelblue btn-sm" '
-            . 'title="' . gettext('Baixar XML') . '"><i class="fa fa-cloud-download fa-fw"></i></a>';
+        $view = '<a href="' . $base . 'cobilling/cobilling_view/' . $id . '" '. 'class="btn btn-royelblue btn-sm facebox" rel="facebox" '. 'title="' . gettext('Detalhes') . '"><i class="fa fa-search fa-fw"></i></a>';
+        $resend = '<a href="' . $base . 'cobilling/cobilling_reprocess/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'onclick="return confirm(\'' . gettext('Reprocessar esta NFCom?') . '\');" ' . 'title="' . gettext('Reprocessar') . '"><i class="fa fa-repeat fa-fw"></i></a>';
+        $dl = '<a href="' . $base . 'cobilling/cobilling_download_xml/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'title="' . gettext('Baixar XML') . '"><i class="fa fa-cloud-download fa-fw"></i></a>';
         $del = '';
         if ($is_admin) {
-            $del = '<a href="' . $base . 'cobilling/cobilling_list_delete/' . $id . '" '
-                 . 'class="btn btn-royelblue btn-sm" '
-                 . 'onclick="return confirm(\'' . gettext('Excluir este registro?') . '\');" '
-                 . 'title="' . gettext('Excluir') . '"><i class="fa fa-trash fa-fw"></i></a>';
+            $del = '<a href="' . $base . 'cobilling/cobilling_list_delete/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'onclick="return confirm(\'' . gettext('Excluir este registro?') . '\');" ' . 'title="' . gettext('Excluir') . '"><i class="fa fa-trash fa-fw"></i></a>';
         }
         return $view . '&nbsp;' . $resend . '&nbsp;' . $dl . ($del !== '' ? '&nbsp;' . $del : '');
     }

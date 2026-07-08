@@ -48,7 +48,7 @@ class Cobilling_form {
             array(gettext('Account'),              '90',  'number',              '', '', '', '', 'true',  'center'),
             array(gettext('Customer'),             '180', 'customer',            '', '', '', '', 'true',  'left'),
             array(gettext('NFCom Number'),         '90',  'numero',              '', '', '', '', 'true',  'right'),
-            array(gettext('NFCom Key'),            '300', 'chave_nfcom',         '', '', '', '', 'true',  'center'),
+            array(gettext('NFCom Key'),            '200', 'chave_nfcom',         '', '', '', '', 'true',  'center'),
             array(gettext('Co-Billing Key'),       '200', 'chave_cofaturamento', '', '', '', '', 'true',  'center'),
             array(gettext('Origin'),               '80',  'origem',              '', '', '', '', 'true',  'center'),
             array(gettext('Status'),               '110', 'status',              '', '', '', '', 'true',  'center'),

@@ -153,11 +153,11 @@ class nfcom_model extends CI_Model {
         $s = (string) $s;
         return (strlen($s) > $len) ? substr($s, 0, $len) : $s;
     }
-
+    
     // ------------------------------------------------------------------
     // Listagem (view_nfcom_cobilling) - consumida por Cobilling::cobilling_list_json.
     // ------------------------------------------------------------------
-
+    
     /**
      * Consulta paginada/contagem da view view_nfcom_cobilling.
      * Escopo anti-IDOR: revenda (type==1) so ve os proprios registros.
@@ -181,7 +181,7 @@ class nfcom_model extends CI_Model {
         }
         return $CI->db_model->countQuery('*', 'view_nfcom_cobilling', $where);
     }
-
+    
     /**
      * Reprocessa um registro: reconverte o payload se necessario, reenvia ao
      * Emissor62 e persiste o resultado. Ponto unico usado pela tela de
@@ -197,7 +197,7 @@ class nfcom_model extends CI_Model {
             return array('ok'=>false, 'http_code'=>404, 'data'=>null, 'error'=>'not_found', 'id'=>$id);
         }
         $CI = get_instance();
-
+    
         $payload = (!empty($reg['payload_enviado'])) ? json_decode($reg['payload_enviado'], true) : null;
         if (!is_array($payload)) {
             if (empty($reg['xml_recebido'])) {
@@ -211,16 +211,16 @@ class nfcom_model extends CI_Model {
             }
             $this->atualizar($id, array('payload_enviado' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
         }
-
+    
         $this->incrementar_tentativa($id);
-
+    
         try {
             $r = $CI->api_emissor62->enviar($payload);
         } catch (Exception $e) {
             $this->atualizar($id, array('status'=>1, 'motivo'=>$this->truncar($e->getMessage(), 255)));
             return array('ok'=>false, 'http_code'=>502, 'data'=>null, 'error'=>$e->getMessage(), 'id'=>$id);
         }
-
+    
         $res = $this->registrar_resposta($id, $r['response'], $r['http_code']);
         return array(
             'ok'        => (bool) $res['ok'],
@@ -230,7 +230,7 @@ class nfcom_model extends CI_Model {
             'id'        => $id,
         );
     }
-
+    
     /**
      * Hard delete restrito ao tenant. Revenda so pode remover seus registros;
      * admin/superadmin (reseller_id=0) remove qualquer um.
@@ -247,5 +247,55 @@ class nfcom_model extends CI_Model {
         }
         $this->db->delete($this->table);
         return ($this->db->affected_rows() > 0);
+    }
+    
+    public function get_nfcom_cobilling_list1($flag = false, $start = 0, $limit = 0, $reseller_id = 0)
+    {
+        $this->db->select('id, accountid, chave_cofaturamento, chave_nfcom, numero, http_code, status, tentativas, origem, created_at, motivo');
+        $this->db->from('nfcom_cobilling');
+    
+        if ((int)$reseller_id > 0) {
+            $this->db->where('reseller_id', (int)$reseller_id);
+        }
+    
+        $accountid = $this->input->get_post('accountid', true);
+        $status = $this->input->get_post('status', true);
+        $chave = $this->input->get_post('chave', true);
+    
+        if ($accountid !== '' && $accountid !== null) {
+            $this->db->where('accountid', (int)$accountid);
+        }
+    
+        if ($status !== '' && $status !== null) {
+            $this->db->where('status', (int)$status);
+        }
+    
+        if ($chave !== '' && $chave !== null) {
+            $this->db->group_start();
+            $this->db->like('chave_cofaturamento', $chave);
+            $this->db->or_like('chave_nfcom', $chave);
+            $this->db->group_end();
+        }
+    
+        $this->db->order_by('id', 'DESC');
+    
+        if ($flag === true) {
+            $this->db->limit($limit, $start);
+            return $this->db->get()->result_array();
+        }
+    
+        return $this->db->count_all_results();
+    }
+    
+    public function get_nfcom_cobilling_by_id($id, $reseller_id = 0)
+    {
+        $this->db->from('nfcom_cobilling');
+        $this->db->where('id', (int)$id);
+    
+        if ((int)$reseller_id > 0) {
+            $this->db->where('reseller_id', (int)$reseller_id);
+        }
+    
+        return $this->db->get()->row_array();
     }
 }

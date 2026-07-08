@@ -102,7 +102,7 @@ $updated_at     = isset($reg['updated_at']) ? (string) $reg['updated_at'] : '';
                         <th><?php echo gettext('DANFE'); ?></th>
                         <td>
                             <?php if ($danfe !== ''): ?>
-                                <a href="<?php echo htmlspecialchars($danfe, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
+                                <a href="http://servluc01.ddns.com.br<?php echo htmlspecialchars($danfe, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
                                     <i class="fa fa-external-link"></i>&nbsp;<?php echo gettext('Abrir DANFE'); ?>
                                 </a>
                             <?php else: ?>

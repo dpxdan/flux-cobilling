@@ -8710,11 +8710,6 @@ msgstr "Remover"
 msgid "Not in use"
 msgstr "Não utilizado"
 
-
-# =====================================================================
-# Traduções do módulo Co-Billing NFCom (PX-108) - Partes 2 e 3
-# =====================================================================
-
 msgid "NFCom Co-Billing"
 msgstr "NFCom Co-Faturamento"
 
@@ -8920,3 +8915,4 @@ msgstr "Abrir DANFE"
 
 msgid "Conta"
 msgstr "Conta"
+
