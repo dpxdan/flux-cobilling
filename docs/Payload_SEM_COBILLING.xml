@@ -1,15 +1,15 @@
-<?xml version="1.0" encoding="utf-8"?>
-<nfcomProc versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfcom">
-  <NFCom xmlns="http://www.portalfiscal.inf.br/nfcom">
+<?xml version="1.0" encoding="UTF-8"?>
+<nfcomProc xmlns="http://www.portalfiscal.inf.br/nfcom" versao="1.00">
+   <NFCom>
     <infNFCom versao="1.00" Id="NFCom43260730288995000107620010000000101043134096">
       <ide>
         <cUF>43</cUF>
         <tpAmb>2</tpAmb>
         <mod>62</mod>
         <serie>1</serie>
-        <nNF>0</nNF>
-        <cNF>0000000</cNF>
-        <cDV>0</cDV>
+		<nNF>10</nNF>
+		<cNF>4313409</cNF>
+		<cDV>6</cDV>
         <dhEmi>2026-07-03T12:20:33-03:00</dhEmi>
         <tpEmis>1</tpEmis>
         <nSiteAutoriz>0</nSiteAutoriz>
@@ -18,24 +18,42 @@
         <tpFat>0</tpFat>
         <verProc>API62-v2.31.945.12</verProc>
       </ide>
+      <emit>
+         <CNPJ>77777777777777</CNPJ>
+         <IE>88899987777</IE>
+         <CRT>3</CRT>
+         <xNome>PARCEIRO FLUX COBILLING</xNome>
+         <xFant>Parceiro</xFant>
+         <enderEmit>
+            <xLgr>Rua Joaquim Pedro Soares</xLgr>
+            <nro>560</nro>
+            <xCpl>SALA 602 SALA 202 SALA 801</xCpl>
+            <xBairro>Centro</xBairro>
+            <cMun>4313409</cMun>
+            <xMun>Novo Hamburgo</xMun>
+            <CEP>93510320</CEP>
+            <UF>RS</UF>
+            <fone>5125002500</fone>
+            <email>financeiro@flux.net.br</email>
+         </enderEmit>
+      </emit>
       <dest>
-        <xNome>Flux Tecnologia</xNome>
-        <CNPJ>30288995000107</CNPJ>
-        <indIEDest>1</indIEDest>
-        <IE>0860515850</IE>
-        <enderDest>
-          <xLgr>Rua Joaquim Pedro Soares</xLgr>
-          <nro>560</nro>
-          <xCpl></xCpl>
-          <xBairro>Centro</xBairro>
-          <cMun>4313409</cMun>
-          <xMun>Novo Hamburgo</xMun>
-          <CEP>13010050</CEP>
-          <UF>RS</UF>
-          <cPais>1058</cPais>
-          <xPais>BRASIL</xPais>
-          <fone>19999999999</fone>
-        </enderDest>
+         <xNome>Rildon Noronha</xNome>
+         <CPF>93340688257</CPF>
+         <indIEDest>9</indIEDest>
+         <enderDest>
+            <xLgr>Rua Conceição</xLgr>
+            <nro>233</nro>
+            <xCpl>Salas 2607 e 2608</xCpl>
+            <xBairro>Centro</xBairro>
+            <cMun>3509502</cMun>
+            <xMun>Campinas</xMun>
+            <CEP>13010050</CEP>
+            <UF>SP</UF>
+            <cPais>1058</cPais>
+            <xPais>BRASIL</xPais>
+            <fone>19999999999</fone>
+         </enderDest>
       </dest>
       <assinante>
         <iCodAssinante>93340688257</iCodAssinante>
