@@ -12,7 +12,7 @@
 				<div class="col-md-12">
 					<div class="card col-md-12 p-0 mb-4">
 						<div class="pb-4" id="floating-label">
-							<h3 class="bg-secondary text-light p-3 rounded-top"><?php echo gettext("Importar XML NFCom"); ?></h3>
+							<h3 class="bg-secondary text-light p-3 rounded-top"><?php echo gettext("Importar Arquivo NFCom"); ?></h3>
 							<div class="col-md-12">
 								<div class="p-0 row">
 
@@ -22,11 +22,11 @@
 									</div>
 
 									<div class="col-md-6 form-group">
-										<label class="p-0 control-label"><?php echo gettext("Arquivo XML (NFCom)"); ?></label>
-										<div class="col-12 mt-2 p-0" data-ripple="">
-											<input type="file" name="nfcom_xml" id="nfcom_xml" accept=".xml"
-												class="custom-file-input" required
-												title="<?php echo gettext('Somente arquivos .xml.'); ?>" />
+<label class="p-0 control-label"><?php echo gettext("Arquivo (XML ou XLSX)"); ?></label>
+											<div class="col-12 mt-2 p-0" data-ripple="">
+												<input type="file" name="nfcom_xml" id="nfcom_xml" accept=".xml,.xlsx"
+													class="custom-file-input" required
+													title="<?php echo gettext('Arquivos .xml ou .xlsx.'); ?>" />
 											<label class="custom-file-label btn-primary btn-file text-left" for="nfcom_xml"> </label>
 										</div>
 									</div>

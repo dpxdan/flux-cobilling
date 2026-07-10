@@ -75,18 +75,30 @@ class cobilling extends MX_Controller {
         $mime  = finfo_file($finfo, $_FILES['nfcom_xml']['tmp_name']);
         finfo_close($finfo);
         $mimes_ok = $this->config->item('nfcom_allowed_mimes');
-        if (!is_array($mimes_ok)) $mimes_ok = array('application/xml', 'text/xml', 'text/plain');
-        if ($ext !== 'xml' || !in_array($mime, $mimes_ok)) {
-            return $this->_falha(gettext('Formato inválido: envie um arquivo .xml.'));
+        if (!is_array($mimes_ok)) $mimes_ok = array('application/xml', 'text/xml', 'application/x-xml', 'text/plain', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        
+        $allowed_exts = array('xml', 'xlsx');
+        if (!in_array($ext, $allowed_exts) || !in_array($mime, $mimes_ok)) {
+            return $this->_falha(gettext('Formato inválido: envie um arquivo .xml ou .xlsx.'));
         }
 
-        // 4) Le o conteudo e valida o XML (parse) + extrai a chave de cofaturamento.
-        $xml = file_get_contents($_FILES['nfcom_xml']['tmp_name']);
+        $xml = '';
+        $chave = null;
 
-        try {
-            $chave = $this->nfcom_mapper->extrairChave($xml);
-        } catch (Exception $e) {
-            return $this->_falha(gettext('XML inválido: ') . $e->getMessage());
+        if ($ext === 'xlsx') {
+            // Processamento de Excel (futura implementação de mapeamento)
+            // Por enquanto, apenas permitimos o upload e salvamento do arquivo.
+            // O processamento real do conteúdo XLSX dependerá do layout esperado.
+            $xml = '<!-- XLSX UPLOADED: ' . $_FILES['nfcom_xml']['name'] . ' -->';
+        } else {
+            // 4) Le o conteudo e valida o XML (parse) + extrai a chave de cofaturamento.
+            $xml = file_get_contents($_FILES['nfcom_xml']['tmp_name']);
+
+            try {
+                $chave = $this->nfcom_mapper->extrairChave($xml);
+            } catch (Exception $e) {
+                return $this->_falha(gettext('XML inválido: ') . $e->getMessage());
+            }
         }
 
         // 5) Valida campos minimos da conta (necessarios para reescrever o
@@ -115,17 +127,20 @@ class cobilling extends MX_Controller {
         if (empty($dir)) $dir = getcwd() . '/attachments/nfcom/';
         $dir = rtrim($dir, '/') . '/';
         if (!is_dir($dir)) @mkdir($dir, 0755, TRUE);
-        $nome = 'nfcom-' . $accountid . '-' . date('Ymd-His') . '-' . mt_rand(1000, 9999) . '.xml';
+        $nome = 'nfcom-' . $accountid . '-' . date('Ymd-His') . '-' . mt_rand(1000, 9999) . '.' . $ext;
         if (!@move_uploaded_file($_FILES['nfcom_xml']['tmp_name'], $dir . $nome)) {
             return $this->_falha(gettext('Falha ao salvar o arquivo. Tente novamente.'));
         }
 
         // 8) Substitui emit/enderEmit/assinante pelos dados da conta Flux.
-        try {
-            $xml_modificado = $this->nfcom_mapper->substituirDadosEmitente($xml, $conta, $cod_ibge);
-        } catch (Exception $e) {
-            $this->flux_log->write_log('error', json_encode($e->getMessage()));
-            return $this->_falha(gettext('Falha ao reescrever o emitente do XML: ') . $e->getMessage());
+        $xml_modificado = $xml;
+        if ($ext === 'xml') {
+            try {
+                $xml_modificado = $this->nfcom_mapper->substituirDadosEmitente($xml, $conta, $cod_ibge);
+            } catch (Exception $e) {
+                $this->flux_log->write_log('error', json_encode($e->getMessage()));
+                return $this->_falha(gettext('Falha ao reescrever o emitente do XML: ') . $e->getMessage());
+            }
         }
 
         // 9) Registro inicial vinculado a conta (status 2 = pendente).
@@ -314,13 +329,17 @@ class cobilling extends MX_Controller {
             show_error(gettext('Registro não encontrado ou sem permissão.'), 404);
             return;
         }
-        $nome = 'nfcom-' . (int) $id . '.xml';
+
+        $ext  = !empty($reg['xml_file']) ? strtolower(pathinfo($reg['xml_file'], PATHINFO_EXTENSION)) : 'xml';
+        $nome = 'nfcom-' . (int) $id . '.' . $ext;
         $dir  = $this->config->item('nfcom_upload_path');
         if (empty($dir)) $dir = getcwd() . '/attachments/nfcom/';
         $dir  = rtrim($dir, '/') . '/';
         $path = !empty($reg['xml_file']) ? ($dir . $reg['xml_file']) : '';
 
-        header('Content-Type: application/xml; charset=utf-8');
+        $mime = ($ext === 'xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/xml';
+
+        header('Content-Type: ' . $mime . '; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $nome . '"');
         if ($path !== '' && is_file($path) && is_readable($path)) {
             header('Content-Length: ' . filesize($path));
@@ -498,6 +517,7 @@ class cobilling extends MX_Controller {
     private function _xml_pretty($xml) {
         $xml = (string) $xml;
         if ($xml === '') return '';
+        if (strpos($xml, '<!-- XLSX UPLOADED:') === 0) return $xml;
         $prev = libxml_use_internal_errors(true);
         $dom = new DOMDocument('1.0', 'UTF-8');
         $dom->preserveWhiteSpace = false;

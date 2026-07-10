@@ -25,4 +25,4 @@ $config['nfcom_partner_token'] = '';
  * Em producao, aponte para um diretorio fora da webroot ou nao servido como script.
  */
 $config['nfcom_upload_path']   = '';
-$config['nfcom_allowed_mimes'] = array('application/xml', 'text/xml', 'application/x-xml', 'text/plain');
+$config['nfcom_allowed_mimes'] = array('application/xml', 'text/xml', 'application/x-xml', 'text/plain', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
