@@ -48,7 +48,7 @@ class cobilling extends MX_Controller {
 
     /** Formulario de upload. */
     public function upload() {
-        $data['page_title']       = gettext('Importar XML NFCom (Co-Billing)');
+        $data['page_title']       = gettext('Importar Arquivo NFCom');
         $data['account_dropdown'] = $this->_dropdown_contas();
         $this->load->view('view_nfcom_upload', $data);
     }
@@ -66,7 +66,7 @@ class cobilling extends MX_Controller {
 
         // 2) Arquivo presente e sem erro de upload.
         if (empty($_FILES['nfcom_xml']['name']) || $_FILES['nfcom_xml']['error'] != 0 || $_FILES['nfcom_xml']['size'] <= 0) {
-            return $this->_falha(gettext('Selecione um arquivo XML válido.'));
+            return $this->_falha(gettext('Selecione um arquivo XML ou XLSX válido.'));
         }
 
         // 3) Extensao + MIME real (finfo).
@@ -82,27 +82,21 @@ class cobilling extends MX_Controller {
             return $this->_falha(gettext('Formato inválido: envie um arquivo .xml ou .xlsx.'));
         }
 
-        $xml = '';
-        $chave = null;
-
+        // Se for XLSX, delega para o novo metodo adequado
         if ($ext === 'xlsx') {
-            // Processamento de Excel (futura implementação de mapeamento)
-            // Por enquanto, apenas permitimos o upload e salvamento do arquivo.
-            // O processamento real do conteúdo XLSX dependerá do layout esperado.
-            $xml = '<!-- XLSX UPLOADED: ' . $_FILES['nfcom_xml']['name'] . ' -->';
-        } else {
-            // 4) Le o conteudo e valida o XML (parse) + extrai a chave de cofaturamento.
-            $xml = file_get_contents($_FILES['nfcom_xml']['tmp_name']);
-
-            try {
-                $chave = $this->nfcom_mapper->extrairChave($xml);
-            } catch (Exception $e) {
-                return $this->_falha(gettext('XML inválido: ') . $e->getMessage());
-            }
+            return $this->_cobilling_importar_xlsx1($accountid, $reseller_id, $conta);
         }
 
-        // 5) Valida campos minimos da conta (necessarios para reescrever o
-        //    emitente). Convencao FluxSBC: accounts.city=municipio, province=UF.
+        // --- Fluxo Original XML ---
+        $xml = file_get_contents($_FILES['nfcom_xml']['tmp_name']);
+
+        try {
+            $chave = $this->nfcom_mapper->extrairChave($xml);
+        } catch (Exception $e) {
+            return $this->_falha(gettext('XML inválido: ') . $e->getMessage());
+        }
+
+        // 5) Valida campos minimos da conta
         $obrig = array(
             'tax_number'  => gettext('CNPJ'),
             'tax_city_number'  => gettext('IE'),
@@ -118,11 +112,8 @@ class cobilling extends MX_Controller {
             }
         }
 
-        // 6) Busca o codigo IBGE do municipio da conta na tabela municipios.
         $cod_ibge = $this->nfcom_model->getCodigoIbgeMunicipio($conta['city'], $conta['province']);
 
-        // 7) Move o arquivo ORIGINAL para o destino - preserva assinatura digital
-        //    do parceiro + auditoria. O banco recebera a versao modificada abaixo.
         $dir = $this->config->item('nfcom_upload_path');
         if (empty($dir)) $dir = getcwd() . '/attachments/nfcom/';
         $dir = rtrim($dir, '/') . '/';
@@ -132,20 +123,14 @@ class cobilling extends MX_Controller {
             return $this->_falha(gettext('Falha ao salvar o arquivo. Tente novamente.'));
         }
 
-        // 8) Substitui emit/enderEmit/assinante pelos dados da conta Flux.
         $xml_modificado = $xml;
-        if ($ext === 'xml') {
-            try {
-                $xml_modificado = $this->nfcom_mapper->substituirDadosEmitente($xml, $conta, $cod_ibge);
-            } catch (Exception $e) {
-                $this->flux_log->write_log('error', json_encode($e->getMessage()));
-                return $this->_falha(gettext('Falha ao reescrever o emitente do XML: ') . $e->getMessage());
-            }
+        try {
+            $xml_modificado = $this->nfcom_mapper->substituirDadosEmitente($xml, $conta, $cod_ibge);
+        } catch (Exception $e) {
+            $this->flux_log->write_log('error', json_encode($e->getMessage()));
+            return $this->_falha(gettext('Falha ao reescrever o emitente do XML: ') . $e->getMessage());
         }
 
-        // 9) Registro inicial vinculado a conta (status 2 = pendente).
-        //    xml_recebido = XML MODIFICADO (foi o que sera convertido/enviado).
-        //    xml_file     = nome do arquivo fisico com o XML ORIGINAL.
         $id = $this->nfcom_model->criar(array(
             'reseller_id'         => (isset($conta['reseller_id']) && $conta['reseller_id'] !== NULL) ? (int) $conta['reseller_id'] : NULL,
             'accountid'           => $accountid,
@@ -156,23 +141,104 @@ class cobilling extends MX_Controller {
             'status'              => 2,
         ));
 
-        // 10) Aviso nao-bloqueante quando o municipio nao foi encontrado (o cMun
-        //     original do parceiro permanece no XML modificado).
         if ($cod_ibge === null) {
             $this->session->set_flashdata('flux_notification',
                 sprintf(gettext('Município "%s" não encontrado na tabela municipios — cMun original preservado no XML.'), $conta['city'])
             );
         }
 
-        // 11) Emissao opcional (checkbox "emitir agora").
         if ($this->input->post('emitir_agora')) {
             $this->_emitir($id, $xml_modificado);
         } else if ($cod_ibge !== null) {
-            // So sobrescreve a flashdata de sucesso se nao houve o aviso do cMun.
             $this->session->set_flashdata('flux_errormsg', sprintf(gettext('XML importado e vinculado à conta (registro #%d).'), $id));
         }
 
         redirect(base_url() . 'cobilling/cobilling_list/');
+    }
+
+    /**
+     * Adequacao do metodo _cobilling_importar_xlsx1 para usar a library flux_excel.
+     * Mapeia o template do usuario para o payload da NFCom.
+     */
+    private function _cobilling_importar_xlsx1($accountid, $reseller_id, array $conta)
+    {
+        $uploadPath = $this->config->item('nfcom_upload_path');
+        if (empty($uploadPath)) $uploadPath = getcwd() . '/attachments/nfcom/';
+        $uploadPath = rtrim($uploadPath, '/') . '/';
+
+        if (!is_dir($uploadPath) && !mkdir($uploadPath, 0775, TRUE)) {
+            $this->flux_log->write_log('error', json_encode('Não foi possível criar o diretório de upload: ' . $uploadPath));
+            return $this->_falha(gettext('Falha na infraestrutura de upload.'));
+        }
+
+        $config = array(
+            'upload_path'   => $uploadPath,
+            'allowed_types' => 'xlsx',
+            'max_size'      => 20480,
+            'encrypt_name'  => TRUE,
+        );
+
+        $this->load->library('upload');
+        $this->upload->initialize($config);
+
+        if (!$this->upload->do_upload('nfcom_xml')) {
+            $erro = $this->upload->display_errors('', '');
+            $this->flux_log->write_log('error', json_encode('Erro no upload de XLSX: ' . $erro));
+            return $this->_falha(gettext('Upload XLSX inválido.'));
+        }
+
+        $fileData = $this->upload->data();
+        $fullPath = $fileData['full_path'];
+
+        try {
+            // Usamos a nossa library flux_excel (minimalista, sem depender de autoload externo pesado)
+            $this->load->library('flux/flux_excel');
+            $allSheets = $this->flux_excel->parse_xlsx($fullPath);
+            
+            // Gera o payload mapeado conforme o template do usuario
+            $payload = $this->flux_excel->convert_to_payload($allSheets, $conta);
+            $json_payload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            
+        } catch (Exception $e) {
+            $this->flux_log->write_log('error', json_encode('Erro ao processar XLSX: ' . $e->getMessage()));
+            return $this->_falha(gettext('Falha ao processar o arquivo XLSX: ') . $e->getMessage());
+        }
+
+        // Cria registro em nfcom_cobilling
+        $id = $this->nfcom_model->criar(array(
+            'reseller_id'         => isset($conta['reseller_id']) && $conta['reseller_id'] !== NULL ? (int) $conta['reseller_id'] : NULL,
+            'accountid'           => (int) $accountid,
+            'xml_recebido'        => NULL, 
+            'xml_file'            => $fileData['file_name'],
+            'origem'              => 'xlsx',
+            'status'              => 2,
+            'payload_enviado'     => $json_payload, 
+        ));
+
+        // Emissao opcional
+        if ($this->input->post('emitir_agora')) {
+            $this->_emitir_payload($id, $payload);
+        } else {
+            $this->session->set_flashdata('flux_errormsg', sprintf(gettext('Planilha XLSX importada e registrada (registro #%d).'), $id));
+        }
+
+        redirect(base_url() . 'cobilling/cobilling_list/');
+    }
+
+    /** Helper para emitir quando ja temos o payload pronto (XLSX). */
+    private function _emitir_payload($id, $payload) {
+        try {
+            $r   = $this->api_emissor62->enviar($payload);
+            $res = $this->nfcom_model->registrar_resposta($id, $r['response'], $r['http_code']);
+            if ($res['ok']) {
+                $this->session->set_flashdata('flux_errormsg', sprintf(gettext('NFCom emitida com sucesso via XLSX (registro #%d).'), $id));
+            } else {
+                $this->session->set_flashdata('flux_notification', sprintf(gettext('Falha na emissão via XLSX (registro #%d, HTTP %d).'), $id, $r['http_code']));
+            }
+        } catch (Exception $e) {
+            $this->nfcom_model->atualizar($id, array('status' => 1, 'motivo' => substr($e->getMessage(), 0, 255)));
+            $this->session->set_flashdata('flux_notification', gettext('Erro de comunicação: ') . $e->getMessage());
+        }
     }
 
     // --- helpers ---
@@ -407,89 +473,34 @@ class cobilling extends MX_Controller {
         array_to_csv($rows, 'nfcom_cobilling_' . date('Ymd_His') . '.csv');
     }
 
-    // ------------------------------------------------------------------
-    // Helpers privados (celulas, badges, tenant-scoping).
-    // ------------------------------------------------------------------
+    // --- private views helpers ---
 
-    /** true se o usuario logado e admin/superadmin (type < 1). */
-    private function _is_admin() {
-        $acc = $this->session->userdata('accountinfo');
-        return (isset($acc['type']) && (int) $acc['type'] < 1);
-    }
-
-    /**
-     * Busca um registro respeitando o escopo do tenant (anti-IDOR).
-     * Revenda (type==1): so acessa registros do proprio reseller_id.
-     * Admin/superadmin: acessa qualquer registro.
-     *
-     * @param int $id
-     * @return array|null
-     */
-    private function _registro_do_tenant($id) {
-        $reg = $this->nfcom_model->buscar($id);
-        if ($reg === null) return null;
-        $acc = $this->session->userdata('accountinfo');
-        if (isset($acc['type']) && (int) $acc['type'] === 1) {
-            if ((int) $reg['reseller_id'] !== (int) $acc['id']) return null;
-        }
-        return $reg;
-    }
-
-    /** Monta o array de celulas de uma linha para o flexigrid. */
+    /** Monta as celulas (cell) de uma linha do flexigrid. */
     private function _montar_cell(array $row, $is_admin) {
         return array(
-            $this->_fmt_data($row['created_at']),
-            $this->_txt($row['number']),
-            $this->_txt($row['customer']),
-            $this->_txt($row['numero']),
-            $this->_fmt_chave($row['chave_nfcom']),
-            $this->_fmt_chave($row['chave_cofaturamento']),
+            (int) $row['id'],
+            $row['created_at'],
+            htmlspecialchars($row['number'] . ' - ' . $row['customer'], ENT_QUOTES, 'UTF-8'),
+            $row['numero'],
+            $row['chave_nfcom'],
+            $row['chave_cofaturamento'],
             $this->_origem_badge($row['origem']),
-            $this->_status_badge((int) $row['status']),
-            $this->_txt($row['situacao']),
-            htmlspecialchars((string) $row['motivo'], ENT_QUOTES, 'UTF-8'),
-            $this->_txt($row['http_code']),
-            (int) $row['tentativas'],
-            $this->_action_buttons((int) $row['id'], $row, $is_admin),
+            $this->_status_badge($row['status']),
+            $row['http_code'],
+            $this->_action_buttons($row['id'], $row, $is_admin),
         );
     }
 
-    /** Truncagem visual da chave (mantem inicio + fim, mostra total). */
-    private function _fmt_chave($chave) {
-        $chave = (string) $chave;
-        if ($chave === '') return '-';
-        $safe = htmlspecialchars($chave, ENT_QUOTES, 'UTF-8');
-        if (strlen($chave) <= 20) return $safe;
-        $curta = substr($chave, 0, 8) . '...' . substr($chave, -6);
-        return '<span title="' . $safe . '">' . htmlspecialchars($curta, ENT_QUOTES, 'UTF-8') . '</span>';
-    }
-
-    /** Data em ISO com quebra amigavel (dd/mm/aaaa hh:mm). */
-    private function _fmt_data($dt) {
-        $dt = (string) $dt;
-        if ($dt === '' || $dt === '0000-00-00 00:00:00') return '-';
-        $ts = strtotime($dt);
-        if ($ts === false) return htmlspecialchars($dt, ENT_QUOTES, 'UTF-8');
-        return date('d/m/Y H:i', $ts);
-    }
-
-    /** Escapa texto para celula. */
-    private function _txt($v) {
-        $v = (string) $v;
-        if ($v === '') return '-';
-        return htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
-    }
-
-    /** Badge de status (0=Autorizada, 1=Erro, 2=Pendente). */
+    /** Badge de status (sucesso/falha/pendente). */
     private function _status_badge($status) {
         $mapa = array(
-            0 => array('badge badge-success', gettext('Autorizada')),
-            1 => array('badge badge-danger',  gettext('Erro')),
-            2 => array('badge badge-warning', gettext('Pendente')),
+            0 => array('badge-success', gettext('Sucesso')),
+            1 => array('badge-danger',  gettext('Falha')),
+            2 => array('badge-warning', gettext('Pendente')),
         );
-        $cls = isset($mapa[$status]) ? $mapa[$status][0] : 'badge badge-secondary';
+        $cls = isset($mapa[$status]) ? $mapa[$status][0] : 'badge-secondary';
         $lbl = isset($mapa[$status]) ? $mapa[$status][1] : gettext('Desconhecido');
-        return '<span class="' . $cls . '">' . htmlspecialchars($lbl, ENT_QUOTES, 'UTF-8') . '</span>';
+        return '<span class="badge ' . $cls . '">' . htmlspecialchars($lbl, ENT_QUOTES, 'UTF-8') . '</span>';
     }
 
     /** Badge de origem (api/upload). */
@@ -497,6 +508,7 @@ class cobilling extends MX_Controller {
         $origem = strtolower((string) $origem);
         if ($origem === 'api') return '<span class="badge badge-info">API</span>';
         if ($origem === 'upload') return '<span class="badge badge-primary">Upload</span>';
+        if ($origem === 'xlsx') return '<span class="badge badge-success">XLSX</span>';
         return '<span class="badge badge-secondary">-</span>';
     }
 
@@ -505,7 +517,7 @@ class cobilling extends MX_Controller {
         $base = base_url();
         $view = '<a href="' . $base . 'cobilling/cobilling_view/' . $id . '" '. 'class="btn btn-royelblue btn-sm facebox" rel="facebox" '. 'title="' . gettext('Detalhes') . '"><i class="fa fa-search fa-fw"></i></a>';
         $resend = '<a href="' . $base . 'cobilling/cobilling_reprocess/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'onclick="return confirm(\'' . gettext('Reprocessar esta NFCom?') . '\');" ' . 'title="' . gettext('Reprocessar') . '"><i class="fa fa-repeat fa-fw"></i></a>';
-        $dl = '<a href="' . $base . 'cobilling/cobilling_download_xml/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'title="' . gettext('Baixar XML') . '"><i class="fa fa-cloud-download fa-fw"></i></a>';
+        $dl = '<a href="' . $base . 'cobilling/cobilling_download_xml/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'title="' . gettext('Baixar Arquivo') . '"><i class="fa fa-cloud-download fa-fw"></i></a>';
         $del = '';
         if ($is_admin) {
             $del = '<a href="' . $base . 'cobilling/cobilling_list_delete/' . $id . '" ' . 'class="btn btn-royelblue btn-sm" ' . 'onclick="return confirm(\'' . gettext('Excluir este registro?') . '\');" ' . 'title="' . gettext('Excluir') . '"><i class="fa fa-trash fa-fw"></i></a>';
@@ -524,7 +536,6 @@ class cobilling extends MX_Controller {
         $dom->formatOutput = true;
         if (@$dom->loadXML($xml)) {
             $out = $dom->saveXML();
-            libxml_clear_errors();
             libxml_use_internal_errors($prev);
             return $out !== false ? $out : $xml;
         }
@@ -537,8 +548,23 @@ class cobilling extends MX_Controller {
     private function _json_pretty($json) {
         $json = (string) $json;
         if ($json === '') return '';
-        $decoded = json_decode($json, true);
-        if (json_last_error() !== JSON_ERROR_NONE) return $json;
-        return json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $j = json_decode($json);
+        if ($j === null) return $json;
+        return json_encode($j, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /** Retorna o registro se pertencer ao tenant, senao null. */
+    private function _registro_do_tenant($id) {
+        $reseller_id = $this->_reseller_id();
+        $reg = $this->nfcom_model->buscar($id);
+        if ($reg === null) return null;
+        if ($reseller_id !== 0 && (int) $reg['reseller_id'] !== $reseller_id) return null;
+        return $reg;
+    }
+
+    /** true se for admin/superadmin (type < 1). */
+    private function _is_admin() {
+        $acc = $this->session->userdata('accountinfo');
+        return (isset($acc['type']) && (int) $acc['type'] < 1);
     }
 }
